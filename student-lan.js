@@ -31,14 +31,23 @@ function joinForm(value = suggested || "") {
   input.autocapitalize = "characters";
   input.value = value;
   const submit = element("button","Continuer","btn primary");
-  form.append(label,input,submit);
+  const nameLabel = element("label","Prénom");
+  nameLabel.htmlFor = "student-name";
+  const name = element("input","");
+  name.id = "student-name";
+  name.required = true;
+  name.maxLength = 40;
+  name.autocomplete = "given-name";
+  const hint = element("p","Visible uniquement dans le suivi de séance de l’enseignant. En cas d’homonyme, ajoutez l’initiale de votre nom.","muted");
+  form.append(label,input,nameLabel,name,hint,submit);
   form.onsubmit = async event => {
     event.preventDefault();
     submit.disabled = true;
     const proposed = input.value.trim().toUpperCase();
     try {
       const response = await fetch("/api/student/join",{
-        method:"POST",headers:{"X-Session-Code":proposed},signal:AbortSignal.timeout(8000)
+        method:"POST",headers:{"X-Session-Code":proposed,"Content-Type":"application/json"},
+        body:JSON.stringify({name:name.value}),signal:AbortSignal.timeout(8000)
       });
       const data = await response.json();
       if (!response.ok) throw Error(data.error);

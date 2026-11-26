@@ -34,6 +34,8 @@ let artPresent = null;
 let network = null;
 let networkBusy = false;
 let connectedParticipants = 0;
+let roster = [];
+let rosterOpen = false;
 let networkDegraded = false;
 const labels = { intro: "Situation", open: "Vote ouvert", closed: "Vote fermé", results: "Résultats", debate: "Débat", update: "Nouvelle information", learning: "À retenir" };
 
@@ -57,6 +59,7 @@ function toast(message) {
 }
 
 function persist() {
+  if (session?.drawn && ["cards","session"].includes(screen)) session.atDeck = screen === "cards";
   try {
     localStorage.setItem(storageKey, JSON.stringify({ settings, selection, session: teacherSession }));
     storageOK = true;
@@ -65,7 +68,7 @@ function persist() {
 
 function render() {
   document.body.classList.toggle("project", projection);
-  const active = screen === "session" || screen === "final" || screen === "profile";
+  const active = ["session","cards","final","profile"].includes(screen);
   nav.innerHTML = [
     screen !== "home" && !projection ? small("Accueil", "home") : "",
     screen === "home" ? small("Banque de situations", "bank") : "",
@@ -73,7 +76,7 @@ function render() {
     network && !network.hosted && !projection ? small("Quitter le mode connecté", "offline") : "",
     active && !session.demo ? small(projection ? "Quitter la projection · F" : "Projection · F", "projection") : ""
   ].join("");
-  const views = { home: renderHome, bank: renderBank, settings: renderSettings, session: renderSession, profile: renderSummary, final: renderSummary };
+  const views = { home: renderHome, bank: renderBank, settings: renderSettings, cards:renderCards, session: renderSession, profile: renderSummary, final: renderSummary };
   const showInvite = network?.hosted && !projection && active && !session.demo;
   app.innerHTML = (showInvite ? invitation() : "") + views[screen]();
   updateNetworkStatus();
@@ -85,7 +88,7 @@ function invitation() {
     <div><span class="eyebrow">Code de séance</span><strong id="room-code">—</strong></div>
     <a id="student-link" class="btn primary" href="/student" target="_blank" rel="noopener">Lien de vote étudiant ↗</a>
     ${small("Copier le lien", "copy-link")}
-    <span id="live-participants" class="muted"></span>
+    <details id="roster" ${rosterOpen ? "open" : ""}><summary id="live-participants"></summary><div id="roster-lists"></div></details>
     <span id="live-status" class="muted"></span>
   </section>`;
 }
@@ -109,6 +112,7 @@ function renderHome() {
       <h2>Dans la peau d’un manager</h2>
       <p class="manifesto">Des décisions.<br>Des conséquences.<br>Pas toujours une bonne réponse.</p>
       <div class="actions">${button("COMMENCER LA SÉANCE", "start", {kind:"primary"})}
+      ${button("Jouer avec les cartes", "start-cards")}
       ${button("Mode étudiant / Démonstration", "demo", {kind:"dark"})}</div>
       <p class="mode-name">Mode enseignant${network ? " connecté" : ""} · ${selection.length} situation(s) sélectionnée(s)</p>
     </div>
@@ -138,6 +142,7 @@ function renderBank() {
       <label>Tirage <select id="random-size">${[5,8,10,12,15].map(n => `<option>${n}</option>`).join("")}</select></label>
       ${button("Tirer au hasard", "random")}
       ${button("Commencer la séance", "start", {kind:"primary", disabled: !selection.some(id => byId.has(id))})}
+      ${button("Jouer avec les cartes", "start-cards", {disabled:!selection.some(id => byId.has(id))})}
     </div>
     <details class="bank-order" id="order" ${document.querySelector("#order")?.open ? "open" : ""}>
       <summary>Ordre de passage · ${selection.filter(id => byId.has(id)).length} sélectionnée(s)</summary>
@@ -239,6 +244,28 @@ function information(item, state) {
     ${state.phase === "update" ? "<strong>MAINTENEZ-VOUS VOTRE DÉCISION ?</strong>" : ""}</div>`;
 }
 
+function cardDeck() {
+  const ordinaryRemain = session.scenarios.some((item,index) => item.format !== "finale" && !session.drawn.includes(index));
+  return session.scenarios.map((item,index) => ({
+    number:index + 1, played:session.drawn.includes(index),
+    locked:ordinaryRemain && item.format === "finale",
+    title:session.drawn.includes(index) ? item.title : ""
+  }));
+}
+
+function renderCards() {
+  return `<article class="card stage">
+    <h1>Choisissez une carte</h1>
+    <p class="context">À tour de rôle, un étudiant propose un numéro.</p>
+    <div class="card-deck">${cardDeck().map(card => {
+      const label = `<strong>${card.number}</strong>${card.played ? `<span>${escape(card.title)}</span>` : card.locked ? "<span>Finale réservée</span>" : ""}`;
+      return button(label,"draw-card",{value:card.number - 1,kind:`deck-tile ${card.played ? "played" : ""}`,disabled:card.played || card.locked});
+    }).join("")}</div>
+    ${session.drawn.length ? `<div class="actions teacher-only">${button("Afficher le bilan","card-finish")}</div>` : ""}
+  </article>`;
+}
+
+const oralPrompt = "La personne qui a choisi la carte peut annoncer et défendre son choix.";
 function renderSession() {
   const item = scenario(), state = current(), vote = round();
   const phase = state.phase;
@@ -253,16 +280,17 @@ function renderSession() {
     case "debate": stageActions = (hasNext ? button("NOUVELLE INFORMATION", "update", {kind:"primary"}) : "") +
       button("CE QU’ON PEUT RETENIR", "learning", {kind:hasNext ? "" : "primary"}); break;
     case "update": stageActions = button(state.index ? "NOUVEAU VOTE" : "SECOND VOTE", "next-round", {kind:"primary"}) + button("CE QU’ON PEUT RETENIR", "learning"); break;
-    case "learning": stageActions = button(session.position + 1 === session.scenarios.length ? "FIN DE LA JOURNÉE" : "SITUATION SUIVANTE", "forward", {kind:"primary"}); break;
+    case "learning": stageActions = button(session.drawn ? (session.drawn.length === session.scenarios.length ? "FIN DE LA JOURNÉE" : "RETOUR AUX CARTES") : session.position + 1 === session.scenarios.length ? "FIN DE LA JOURNÉE" : "SITUATION SUIVANTE", "forward", {kind:"primary"}); break;
   }
   if (session.demo) return renderStudent(item, state);
-  return `<div class="flow"><article class="card stage">
-    <div class="meta"><span class="tag gold">SITUATION ${session.position + 1} / ${session.scenarios.length}</span><span class="tag">${escape(item.time)}</span><span class="tag">${escape(item.category)}</span><span class="tag">${formats[item.format][0]}</span></div>
+  return `<div class="flow"><article class="card stage ${session.drawn && phase === "intro" ? "card-reveal" : ""}">
+    <div class="meta"><span class="tag gold">${session.drawn ? "CARTE" : "SITUATION"} ${session.position + 1} / ${session.scenarios.length}</span><span class="tag">${escape(item.time)}</span><span class="tag">${escape(item.category)}</span><span class="tag">${formats[item.format][0]}</span></div>
     <h1>${escape(item.title)}</h1>
     <p class="context">${escape(item.context)}</p>
     ${information(item, state)}
     ${showChoices ? voteChoices(item, phase === "open" && !projection && !usesNetwork(vote)) : ""}
     ${phase === "open" || phase === "closed" ? `<p class="question" id="vote-count">${voteStatus(phase, vote)}</p>` : ""}
+    ${session.drawn && phase === "closed" && state.index === 0 && !vote.published ? `<p class="panel">${oralPrompt}</p>` : ""}
     ${phase === "open" && !usesNetwork(vote) ? openControls(item, vote) : ""}
     ${phase === "results" || phase === "debate" ? resultsPanel(item, state) : ""}
     ${phase === "debate" ? '<div class="panel"><h2>Qui veut défendre son choix ?</h2></div>' : ""}
@@ -279,12 +307,13 @@ function teacherPanel(state, hasNext, stageActions) {
     ${network && !network.hosted ? `<p id="participants" class="muted">${connectedParticipants} appareil(s) connecté(s)</p>` : ""}
     ${network?.hosted ? `<div class="actions step-controls">${stageActions}</div><hr>` : ""}
     <div class="actions">
-      ${small("← Situation précédente", "previous", {disabled: session.position === 0})}
-      ${small(session.position + 1 === session.scenarios.length ? "Fin de la journée →" : "Situation suivante →", "forward")}
+      ${session.drawn ? small(session.drawn.length === session.scenarios.length ? "Fin de la journée →" : "Retour aux cartes", "forward") :
+        small("← Situation précédente", "previous", {disabled:session.position === 0}) +
+        small(session.position + 1 === session.scenarios.length ? "Fin de la journée →" : "Situation suivante →", "forward")}
     </div><hr><div class="actions">
       ${small("Ouvrir le vote", "open", {disabled: !["intro","closed"].includes(phase)})}
       ${small("Fermer le vote", "close", {disabled: phase !== "open"})}
-      ${small("Révéler les résultats", "results", {disabled: !["closed","open","debate"].includes(phase)})}
+      ${small("Révéler les résultats", "results", {disabled: !(session.drawn ? ["closed","debate"] : ["closed","open","debate"]).includes(phase)})}
       ${small("Masquer les résultats", "hide-results", {disabled: !["results","debate"].includes(phase)})}
       ${small("Nouvelle information", "update", {disabled: !hasNext || !["results","debate"].includes(phase)})}
       ${small(state.index ? "Nouveau vote" : "Second vote", "next-round", {disabled: phase !== "update"})}
@@ -375,11 +404,14 @@ function renderSummary() {
   </article>`;
 }
 
-function startSession(items, demo = false) {
+function startSession(items, demo = false, cards = false) {
   session = { scenarios: items, states: items.map(makeState), position: 0, demo, finished: false, reflection: null };
   if (demo) current().phase = "open";
   else teacherSession = session;
-  screen = "session";
+  if (cards) session.drawn = [];
+  roster = [];
+  rosterOpen = false;
+  screen = cards ? "cards" : "session";
   manual = prompts = false;
   selected = null;
   refresh(true);
@@ -401,7 +433,11 @@ function randomSelection(amount) {
 }
 
 function navigate(offset) {
-  if (session.position + offset >= session.scenarios.length) {
+  if (session.drawn) {
+    if (offset < 0) return;
+    session.finished = session.drawn.length === session.scenarios.length;
+    screen = session.finished ? "final" : "cards";
+  } else if (session.position + offset >= session.scenarios.length) {
     session.finished = true;
     screen = "final";
   } else {
@@ -557,19 +593,35 @@ function action(name, value) {
     screen = name;
     return refresh(true);
   }
-  if (name === "start" || name === "random-home") {
+  if (name === "start" || name === "start-cards" || name === "random-home") {
     if (teacherSession && !teacherSession.finished && !confirm("Remplacer la dernière séance par une nouvelle ?")) return;
     if (name === "random-home") randomSelection(8);
     const items = selectedItems();
-    return items.length ? startSession(items) : toast("Sélectionnez au moins une situation dans la banque.");
+    return items.length ? startSession(items, false, name === "start-cards") : toast("Sélectionnez au moins une situation dans la banque.");
   }
   if (name === "demo") return startSession([SCENARIOS[2], SCENARIOS[12]], true);
   if (name === "resume" && teacherSession) {
     session = teacherSession;
-    screen = session.finished ? "final" : "session";
+    screen = session.finished ? "final" : session.atDeck || (session.drawn && !session.drawn.length) ? "cards" : "session";
     manual = prompts = false;
     selected = null;
     return refresh(true);
+  }
+  if (screen === "cards") {
+    if (name === "card-finish") {
+      session.finished = true;
+      screen = "final";
+      return refresh(true);
+    }
+    if (name === "draw-card") {
+      const index = Number(value);
+      const card = cardDeck()[index];
+      if (!card || card.played || card.locked) return;
+      session.drawn.push(index);
+      session.position = index;
+      screen = "session";
+      return refresh(true);
+    }
   }
   if (screen === "bank") {
     switch (name) {
@@ -635,7 +687,7 @@ function action(name, value) {
     case "simulate": if (phase === "open" && !usesNetwork(vote)) simulate(); break;
     case "manual": if (phase === "open" && !usesNetwork(vote)) { manual = !manual; render(); app.querySelector("#manual-form input")?.focus(); } break;
     case "results":
-      if (["open","closed","debate"].includes(phase)) {
+      if ((session.drawn ? ["closed","debate"] : ["open","closed","debate"]).includes(phase)) {
         vote.published = true;
         setPhase("results");
       }
@@ -665,7 +717,7 @@ function action(name, value) {
       refresh(true);
       break;
     case "restart":
-      if (confirm("Effacer tous les votes et recommencer cette séance ?")) startSession(session.scenarios);
+      if (confirm("Effacer tous les votes et recommencer cette séance ?")) startSession(session.scenarios, false, Boolean(session.drawn));
       break;
   }
 }
@@ -744,11 +796,11 @@ importInput.addEventListener("change", async () => {
 document.addEventListener("keydown", event => {
   if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey || event.repeat ||
       event.target.closest("input,select,textarea,[contenteditable]") ||
-      !["session","profile","final"].includes(screen) || session.demo) return;
+      !["session","cards","profile","final"].includes(screen) || session.demo) return;
   const key = event.key.toLowerCase();
   if (key === "f") { event.preventDefault(); toggleProjection(); return; }
   if (screen !== "session") {
-    if (key === "arrowleft") { event.preventDefault(); action("back-to-session"); }
+    if (key === "arrowleft" && screen !== "cards") { event.preventDefault(); dispatch(() => action("back-to-session")); }
     return;
   }
   const shortcuts = { arrowright:advance, arrowleft:back, r:() => action("results"), n:() => action("update"), d:() => {
@@ -763,10 +815,14 @@ function voteStatus(phase, vote) {
 }
 
 function liveVote() {
-  const active = ["session","final","profile"].includes(screen) && !session.demo;
+  const active = ["session","cards","final","profile"].includes(screen) && !session.demo;
   const room = active ? (session.networkRoom ||= network.id()) : null;
   const snapshot = {room, stage:null, display:null};
   if (!active) return {payload:snapshot};
+  if (screen === "cards") {
+    snapshot.display = {type:"cards", cards:cardDeck()};
+    return {payload:snapshot};
+  }
   if (screen !== "session") {
     const stats = summarize();
     snapshot.display = {
@@ -798,7 +854,8 @@ function liveVote() {
   snapshot.stage = stage;
   snapshot.display = {
     ...publicStage, type:"situation", phase:state.phase, category:item.category, length:session.scenarios.length,
-    total:total(vote.counts), results
+    total:total(vote.counts), results, card:Boolean(session.drawn),
+    oral:session.drawn && state.phase === "closed" && state.index === 0 && !vote.published ? oralPrompt : ""
   };
   return {vote,open,payload:snapshot};
 }
@@ -813,6 +870,21 @@ function takeNetworkCounts(vote, data) {
   persist();
 }
 
+function renderRoster(summary) {
+  const active = screen === "session";
+  const voted = active ? roster.filter(entry => entry.voted) : [];
+  summary.textContent = active ? `${roster.length} inscrits · ${voted.length} ont voté` : `${roster.length} inscrits`;
+  const lists = document.querySelector("#roster-lists");
+  const pending = active ? roster.filter(entry => !entry.voted) : roster;
+  const section = (title, people) => `<section><h3>${title}</h3>
+    ${people.length ? `<ul>${people.slice().sort((a,b) => a.name.localeCompare(b.name,"fr")).map(entry => `<li>${escape(entry.name)}</li>`).join("")}</ul>` : "<p>Personne pour le moment.</p>"}</section>`;
+  const html = (active ? section("Ont voté",voted) : "") + section(active ? "En attente" : "Inscrits",pending);
+  if (lists.dataset.content !== html) {
+    lists.innerHTML = html;
+    lists.dataset.content = html;
+  }
+}
+
 function updateNetworkStatus() {
   const participants = document.querySelector("#participants");
   if (participants) participants.textContent = `${connectedParticipants} appareil(s) connecté(s)`;
@@ -822,9 +894,11 @@ function updateNetworkStatus() {
   const status = document.querySelector("#live-status");
   if (code) code.textContent = network?.code || "—";
   if (link && network?.code) link.href = "/student?code=" + encodeURIComponent(network.code);
-  if (live) live.textContent = `${connectedParticipants} appareil(s) connecté(s)`;
+  if (live) renderRoster(live);
+  const details = document.querySelector("#roster");
+  if (details) details.ontoggle = () => { if (details.isConnected) rosterOpen = details.open; };
   if (status) status.textContent = networkDegraded ? "Reconnexion en cours…" : networkBusy ? "Synchronisation…" :
-    screen === "session" ? voteStatus(current().phase,round()) : "Bilan de séance";
+    screen === "session" ? voteStatus(current().phase,round()) : screen === "cards" ? "Choix de la carte" : "Bilan de séance";
   const counter = document.querySelector("#vote-count");
   if (counter && screen === "session") counter.textContent = voteStatus(current().phase, round());
 }
@@ -837,6 +911,7 @@ async function syncNetwork(previous, next) {
     data = await network.stage(next?.payload);
   }
   connectedParticipants = data.participants;
+  roster = data.roster || [];
   if (next) takeNetworkCounts(next.vote, data);
   if (previous?.open && previous.vote !== next?.vote) {
     takeNetworkCounts(previous.vote, await network.counts(previous.vote.networkKey));
@@ -879,6 +954,7 @@ async function pollNetwork() {
     const data = await client.counts(snapshot.vote?.networkKey);
     if (network !== client || networkBusy) return;
     connectedParticipants = data.participants;
+    roster = data.roster || [];
     if (snapshot?.open && screen === "session" && snapshot.vote === round() && current().phase === "open") {
       takeNetworkCounts(snapshot.vote, data);
     }
@@ -892,7 +968,7 @@ if (window.MANAGER_LAN) {
     network = window.MANAGER_LAN;
     if (network.hosted && teacherSession) {
       session = teacherSession;
-      screen = session.finished ? "final" : "session";
+      screen = session.finished ? "final" : session.atDeck || (session.drawn && !session.drawn.length) ? "cards" : "session";
     }
     render();
     if (screen !== "home") return syncNetwork(null, liveVote());

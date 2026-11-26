@@ -35,7 +35,7 @@ function resultColumn(counts, data, title) {
 
 function renderSituation(data) {
   const contents = [
-    node("p",`Situation ${data.position} / ${data.length} · ${data.category}`,"eyebrow"),
+    node("p",`${data.card ? "Carte" : "Situation"} ${data.position} / ${data.length} · ${data.category}`,"eyebrow"),
     node("h1",data.title), node("p",data.context,"context")
   ];
   if (data.fact) {
@@ -51,8 +51,9 @@ function renderSituation(data) {
       choices.append(row);
     });
     contents.push(node("h2",data.question,"question"),choices);
-    if (["open","closed"].includes(data.phase)) contents.push(node("p",`Vote ${data.phase === "open" ? "ouvert" : "fermé"} · ${data.total} vote(s) reçu(s)`,"question"));
+    if (["open","closed"].includes(data.phase)) contents.push(node("p",`Vote ${data.phase === "open" ? "ouvert" : "fermé"} · ${data.total} vote(s) reçu(s)${Number.isInteger(data.registered) ? " sur " + data.registered + " inscrits" : ""}`,"question"));
   }
+  if (data.oral) contents.push(node("p",data.oral,"panel"));
   if (data.results) {
     const panel = node("section","","panel");
     panel.append(node("h2",data.phase === "debate" ? "Qui veut défendre son choix ?" : "Résultats"));
@@ -72,6 +73,18 @@ function renderSituation(data) {
     contents.push(panel);
   }
   return contents;
+}
+
+function renderCards(data) {
+  const deck = node("div","","card-deck");
+  data.cards.forEach(card => {
+    const tile = node("div","","deck-tile " + (card.played ? "played" : card.locked ? "locked" : ""));
+    tile.append(node("strong",String(card.number)));
+    if (card.played) tile.append(node("span",card.title));
+    else if (card.locked) tile.append(node("span","Finale réservée"));
+    deck.append(tile);
+  });
+  return [node("h1","Choisissez une carte"),node("p","À tour de rôle, un étudiant propose un numéro.","context"),deck];
 }
 
 function renderSummary(data) {
@@ -96,8 +109,11 @@ async function poll() {
     const next = JSON.stringify(data);
     if (next !== signature) {
       const contents = !data ? [node("h1","En attente de la séance")] :
-        data.type === "situation" ? renderSituation(data) : renderSummary(data);
+        data.type === "situation" ? renderSituation(data) : data.type === "cards" ? renderCards(data) : renderSummary(data);
+      const reveal = data?.card && data.phase === "intro" && !stage.classList.contains("card-reveal");
+      if (!data?.card || data.phase !== "intro") stage.classList.remove("card-reveal");
       stage.replaceChildren(...contents);
+      if (reveal) stage.classList.add("card-reveal");
       signature = next;
     }
     status.textContent = "";

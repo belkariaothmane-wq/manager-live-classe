@@ -16,7 +16,7 @@ const inviteCode = () => randomBytes(4).toString("hex").toUpperCase();
 let code = inviteCode();
 let roomId = null;
 let display = null;
-const joined = new Set();
+const joined = new Map();
 let stage = null;
 const rounds = new Map();
 const presence = new Map();
@@ -65,7 +65,8 @@ function participants() {
 
 function teacherView(key) {
   const votes = rounds.get(key);
-  return { code: hosted ? code : null, participants: participants(), available: Boolean(votes), ballots: votes ? [...votes] : [] };
+  const roster = hosted ? [...joined].map(([id,name]) => ({name, voted: Boolean(votes?.has(id))})) : [];
+  return { code: hosted ? code : null, participants: participants(), available: Boolean(votes), ballots: votes ? [...votes] : [], roster };
 }
 
 function studentView(id) {
@@ -113,6 +114,7 @@ function projectedView() {
   if (!display) return null;
   if (!stage || !display.results) return {
     ...display,
+    ...(hosted ? {registered:joined.size} : {}),
     ...(stage ? {total:rounds.get(stage.key)?.size ?? display.total} : {})
   };
   const ballots = rounds.get(stage.key);
@@ -165,9 +167,15 @@ const server = http.createServer(async (request, response) => {
       return send(response, 401, {error:"Code de séance incorrect ou expiré."});
     }
     if (route === "/api/student/join" && request.method === "POST" && hosted) {
+      const data = await readJSON(request);
+      if (request.headers["x-session-code"] !== code || !roomId) return send(response, 401, {error:"La séance a changé ou n’a pas encore commencé."});
+      const name = typeof data?.name === "string" ? data.name.normalize("NFC").trim().replace(/ +/g," ") : "";
+      if (!name || name.length > 40 || !/^[\p{L}\p{M}][\p{L}\p{M} .’'-]*$/u.test(name)) {
+        return send(response, 400, {error:"Saisissez un prénom et, si besoin, l’initiale de votre nom."});
+      }
       if (joined.size >= 1000) return send(response, 409, {error:"Séance complète."});
       const id = randomBytes(16).toString("hex");
-      joined.add(id);
+      joined.set(id,name);
       return send(response, 200, {id});
     }
     if (route === "/api/student/state" && request.method === "GET") {

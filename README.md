@@ -64,3 +64,14 @@ Les votes sont anonymes et verrouillés après enregistrement à chaque tour. Le
 Pour repasser aux commandes de vote locales, quittez la projection si elle est active, puis cliquez sur **Quitter le mode connecté**. Vous pouvez aussi ouvrir `index.html` pour une séance autonome. Les stockages de ces deux adresses sont distincts.
 
 La projection connectée utilise `projection.html` et `projection.js`. Le serveur, l’adaptateur enseignant et l’écran téléphone sont fournis dans `server.js`, `teacher-lan.js`, `student.html` et `student-lan.js`. Le lancement autonome ne charge aucun de ces fichiers.
+
+## Jouer avec les cartes et suivre les participants
+
+- Dans la banque, sélectionnez les situations à proposer (ou cliquez sur **Tout sélectionner** pour les 51). Lancez **Jouer avec les cartes**. Les numéros suivent l’ordre de la sélection. Les titres apparaissent à mesure que les cartes sont jouées. La finale, si sélectionnée, se débloque après les autres cartes.
+- Faites choisir un numéro à un étudiant, puis cliquez sur cette carte dans le tableau de bord. Après le premier vote, fermez le tour et invitez cette personne à annoncer son propre choix à l’oral avant de révéler les résultats. Les autres étapes de la situation restent accessibles. **Retour aux cartes** reprend le choix d’un numéro.
+- En ligne, chaque étudiant saisit son prénom pour rejoindre la séance. Dans le tableau de bord, ouvrez **inscrits · ont voté** pour consulter les prénoms des participants qui ont voté ou sont en attente au tour en cours. Les réponses individuelles ne sont pas affichées. La projection affiche le décompte collectif.
+- Les prénoms sont conservés en mémoire sur le serveur pour la séance. Le tableau de bord enseignant peut afficher les deux listes. Le prochain démarrage d’une nouvelle séance réinitialise ces listes et génère un nouveau code.
+
+### Mettre à jour un service Render déjà déployé
+
+Dans le dépôt GitHub déjà connecté à Render, ajoutez à la racine les nouvelles versions de `app.js`, `projection.js`, `server.js`, `student-lan.js`, `style.css` et `README.md` en un seul commit. Attendez **Live** dans Render, puis rechargez les onglets enseignant, projection et étudiant. Faites la mise à jour entre deux séances, puisque le redémarrage réinitialise la salle de vote.

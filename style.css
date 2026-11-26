@@ -129,3 +129,19 @@ nav a.btn,.invite a.btn{text-decoration:none;display:inline-block}
 .single-controls{display:none}
 .project .single-controls{display:flex}
 .step-controls .btn{font-size:.9rem}
+#roster{position:relative}
+#roster summary{cursor:pointer;font-weight:700;padding:7px 2px}
+#roster-lists{display:flex;gap:20px;flex-wrap:wrap;min-width:min(320px,75vw);max-height:280px;overflow:auto;background:white;border:1px solid var(--line);box-shadow:0 8px 20px #10233a22;border-radius:8px;padding:12px;position:absolute;z-index:4}
+#roster-lists h3{font-size:.95rem;margin:0 0 5px}
+#roster-lists ul{margin:0;padding-left:20px}
+.card-deck{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:12px}
+.deck-tile{min-height:100px;padding:10px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:6px;border-radius:10px;border:1px solid #425975;background:#172f4b;color:white}
+.deck-tile strong{font-size:2rem;color:var(--gold)}
+.deck-tile span{font-size:.76rem}
+.deck-tile.played{opacity:1;background:#e7edf4;color:#253b53;border-color:#b8c7d8}
+.deck-tile.played strong{color:#253b53}
+.deck-tile.locked{opacity:.60}
+.btn.deck-tile:not(:disabled):hover{background:#284d74;color:white}
+.card-reveal{animation:card-turn .36s ease-out}
+@keyframes card-turn{from{transform:perspective(1200px) rotateY(-20deg);opacity:.45}to{transform:none;opacity:1}}
+@media(prefers-reduced-motion:reduce){.card-reveal{animation:none}}
